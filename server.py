@@ -5,7 +5,7 @@ import socket
 import socks
 import os
 from adb_shell.adb_device import AdbDeviceTcp
-from adb_shell.auth.sign_pythonrsa import sign_pythonrsa
+from adb_shell.auth.sign_pythonrsa import PythonRSASigner
 from adb_shell.auth.keygen import keygen
 
 app = FastAPI()
@@ -21,7 +21,7 @@ with open('adbkey') as f:
     priv = f.read()
 with open('adbkey.pub') as f:
     pub = f.read()
-signer = sign_pythonrsa(priv, pub)
+signer = PythonRSASigner(pub, priv)
 
 @app.get("/", response_class=HTMLResponse)
 def read_root():
@@ -103,35 +103,6 @@ def read_root():
 </body>
 </html>
     """
-
-@app.post("/send_command")
-def send_command(data: CommandRequest):
-    orig_socket = socket.socket
-    orig_create_conn = socket.create_connection
-    
-    try:
-        # Включаем SOCKS5 только для запроса к телевизору
-        socks.set_default_proxy(socks.SOCKS5, "127.0.0.1", 1055)
-        socket.socket = socks.socksocket
-        
-        def patched_create_connection(address, timeout=socket._GLOBAL_DEFAULT_TIMEOUT, source_address=None):
-            s = socks.socksocket()
-            if timeout is not socket._GLOBAL_DEFAULT_TIMEOUT:
-                s.settimeout(timeout)
-            s.connect(address)
-            return s
-        socket.create_connection = patched_create_connection
-
-        # Подключаемся по протоколу ADB и отправляем команду
-        device = AdbDeviceTcp(data.ip, 5555, default_transport_timeout_s=4.0)
-        device.connect(rsa_keys=[signer], auth_timeout_s=4.0)
-        device.shell(f"input keyevent {data.key}")
-        device.close()
-        
-        return {"status": "success"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Отказ ADB: {str(e)}")
-    finally:
-        # Восстанавливаем оригинальные сокеты
-        socket.socket = orig_socket
-        socket.create_connection = orig_create_conn
+</Step>
+<Step subtitle="1 минута" title="Отправьте на GitHub">
+  Сохраните файл, сделайте коммит и отправьте его в репозиторий:
