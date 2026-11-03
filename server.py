@@ -1,9 +1,7 @@
-import os
-import asyncio
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
-from android_tv_remote import AndroidTVRemote
+import socket
 
 app = FastAPI()
 
@@ -11,7 +9,7 @@ class CommandRequest(BaseModel):
     ip: str
     key: str
 
-# Главная страница с интерфейсом пульта (Telegram Mini App)
+# Главная страница возвращает интерфейс пульта для Telegram Mini App
 @app.get("/", response_class=HTMLResponse)
 def read_root():
     return """
@@ -66,25 +64,25 @@ def read_root():
 <body>
     <h2>Пульт Xiaomi Mi TV</h2>
     <div class="input-group">
-        <label for="tv-ip" style="font-size: 12px; display: block; margin-bottom: 5px;">IP-адрес телевизора (Tailscale):</label>
-        <input type="text" id="tv-ip" value="100.x.x.x" placeholder="100.x.x.x">
+        <label for="tv-ip" style="font-size: 12px; display: block; margin-bottom: 5px;">Tailscale IP телевизора:</label>
+        <input type="text" id="tv-ip" value="100.89.27.126" placeholder="100.89.27.126">
     </div>
     <div class="remote-container">
         <div class="row">
-            <button class="power" onclick="sendKey('POWER')">⏻</button>
-            <button onclick="sendKey('HOME')">🏠</button>
-            <button onclick="sendKey('BACK')">↩</button>
+            <button class="power" onclick="sendKey('KEYCODE_POWER')">⏻</button>
+            <button onclick="sendKey('KEYCODE_HOME')">🏠</button>
+            <button onclick="sendKey('KEYCODE_BACK')">↩</button>
         </div>
-        <button onclick="sendKey('UP')">▲</button>
+        <button onclick="sendKey('KEYCODE_DPAD_UP')">▲</button>
         <div class="row">
-            <button onclick="sendKey('LEFT')">◀</button>
-            <button class="ok" onclick="sendKey('CENTER')">OK</button>
-            <button onclick="sendKey('RIGHT')">▶</button>
+            <button onclick="sendKey('KEYCODE_DPAD_LEFT')">◀</button>
+            <button class="ok" onclick="sendKey('KEYCODE_DPAD_CENTER')">OK</button>
+            <button onclick="sendKey('KEYCODE_DPAD_RIGHT')">▶</button>
         </div>
-        <button onclick="sendKey('DOWN')">▼</button>
+        <button onclick="sendKey('KEYCODE_DPAD_DOWN')">▼</button>
         <div class="row" style="margin-top: 10px;">
-            <button onclick="sendKey('VOLUME_DOWN')">🔉</button>
-            <button onclick="sendKey('VOLUME_UP')">🔊</button>
+            <button onclick="sendKey('KEYCODE_VOLUME_DOWN')">🔉</button>
+            <button onclick="sendKey('KEYCODE_VOLUME_UP')">🔊</button>
         </div>
     </div>
     <div id="status" class="status">Готов к работе</div>
@@ -124,15 +122,14 @@ def read_root():
     """
 
 @app.post("/send_command")
-async def send_command(data: CommandRequest):
+def send_command(data: CommandRequest):
+    port = 5555
+    command = f"input keyevent {data.key}\n"
     try:
-        # Инициализируем клиент Android TV Remote для указанного IP (например, через Tailscale)
-        tv = AndroidTVRemote(target_ip=data.ip, client_name="TelegramRemoteBot")
-        
-        # Подключаемся и отправляем нажатие клавиши
-        async with tv:
-            await tv.send_key_command(data.key)
-            
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(3.0)
+            s.connect((data.ip, port))
+            s.sendall(command.encode('utf-8'))
         return {"status": "success"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
