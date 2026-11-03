@@ -2,3 +2,5 @@ fastapi
 uvicorn
 pydantic
 PySocks
+adb-shell
+rsa

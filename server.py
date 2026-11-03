@@ -3,12 +3,25 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 import socket
 import socks
+import os
+from adb_shell.adb_device import AdbDeviceTcp
+from adb_shell.auth.sign_pythonrsa import sign_pythonrsa
+from adb_shell.auth.keygen import keygen
 
 app = FastAPI()
 
 class CommandRequest(BaseModel):
     ip: str
     key: str
+
+# Генерация и загрузка RSA-ключей для авторизации на телевизоре
+if not os.path.exists('adbkey'):
+    keygen('adbkey')
+with open('adbkey') as f:
+    priv = f.read()
+with open('adbkey.pub') as f:
+    pub = f.read()
+signer = sign_pythonrsa(priv, pub)
 
 @app.get("/", response_class=HTMLResponse)
 def read_root():
@@ -93,24 +106,32 @@ def read_root():
 
 @app.post("/send_command")
 def send_command(data: CommandRequest):
-    port = 5555
-    command = f"input keyevent {data.key}\n"
-    
-    # Точечно создаем SOCKS5 сокет только для этой команды
-    s = socks.socksocket()
-    s.set_proxy(socks.SOCKS5, "127.0.0.1", 1055)
-    s.settimeout(4.0)
+    orig_socket = socket.socket
+    orig_create_conn = socket.create_connection
     
     try:
-        s.connect((data.ip, port))
-        s.sendall(command.encode('utf-8'))
-        s.close()
+        # Включаем SOCKS5 только для запроса к телевизору
+        socks.set_default_proxy(socks.SOCKS5, "127.0.0.1", 1055)
+        socket.socket = socks.socksocket
+        
+        def patched_create_connection(address, timeout=socket._GLOBAL_DEFAULT_TIMEOUT, source_address=None):
+            s = socks.socksocket()
+            if timeout is not socket._GLOBAL_DEFAULT_TIMEOUT:
+                s.settimeout(timeout)
+            s.connect(address)
+            return s
+        socket.create_connection = patched_create_connection
+
+        # Подключаемся по протоколу ADB и отправляем команду
+        device = AdbDeviceTcp(data.ip, 5555, default_transport_timeout_s=4.0)
+        device.connect(rsa_keys=[signer], auth_timeout_s=4.0)
+        device.shell(f"input keyevent {data.key}")
+        device.close()
+        
         return {"status": "success"}
-    except socket.timeout:
-        raise HTTPException(status_code=504, detail="Тайм-аут: Телевизор выключен или не подключен к интернету.")
-    except ConnectionRefusedError:
-        raise HTTPException(status_code=502, detail="Соединение отклонено: Порт 5555 закрыт на ТВ.")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Ошибка сокета: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Отказ ADB: {str(e)}")
     finally:
-        s.close()
+        # Восстанавливаем оригинальные сокеты
+        socket.socket = orig_socket
+        socket.create_connection = orig_create_conn
