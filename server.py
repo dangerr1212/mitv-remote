@@ -9,7 +9,6 @@ class CommandRequest(BaseModel):
     ip: str
     key: str
 
-# Главная страница возвращает интерфейс пульта для Telegram Mini App
 @app.get("/", response_class=HTMLResponse)
 def read_root():
     return """
@@ -21,57 +20,28 @@ def read_root():
     <title>Пульт Mi TV</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-            background-color: var(--tg-theme-bg-color, #ffffff);
-            color: var(--tg-theme-text-color, #000000);
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            min-height: 100vh;
-            margin: 0;
-            padding: 20px;
-            box-sizing: border-box;
-        }
-        h2 { margin-bottom: 10px; font-size: 18px; }
-        .input-group { margin-bottom: 20px; width: 100%; max-width: 300px; text-align: center; }
-        input {
-            width: 100%; padding: 10px; font-size: 16px;
-            border: 1px solid #ccc; border-radius: 8px;
-            box-sizing: border-box; text-align: center;
-        }
-        .remote-container {
-            display: flex; flex-direction: column; align-items: center; gap: 15px;
-            background: var(--tg-theme-secondary-bg-color, #f0f0f0);
-            padding: 20px; border-radius: 20px; width: 100%; max-width: 300px;
-        }
+        body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; background: var(--tg-theme-bg-color, #fff); color: var(--tg-theme-text-color, #000); }
+        .input-group, .remote-container { width: 100%; max-width: 300px; text-align: center; margin-bottom: 20px; }
+        input { width: 100%; padding: 10px; font-size: 16px; border: 1px solid #ccc; border-radius: 8px; text-align: center; box-sizing: border-box; }
+        .remote-container { display: flex; flex-direction: column; align-items: center; gap: 15px; background: var(--tg-theme-secondary-bg-color, #f0f0f0); padding: 20px; border-radius: 20px; }
         .row { display: flex; gap: 20px; }
-        button {
-            background-color: var(--tg-theme-button-color, #2481cc);
-            color: var(--tg-theme-button-text-color, #ffffff);
-            border: none; border-radius: 50%; width: 60px; height: 60px;
-            font-size: 16px; font-weight: bold; cursor: pointer;
-            display: flex; align-items: center; justify-content: center;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        }
+        button { background-color: #2481cc; color: #fff; border: none; border-radius: 50%; width: 60px; height: 60px; font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
         button:active { transform: scale(0.95); }
-        button.ok { background-color: #ff9800; }
         button.power { background-color: #f44336; }
-        .status { margin-top: 15px; font-size: 14px; color: gray; text-align: center; }
+        button.ok { background-color: #ff9800; }
+        .status { margin-top: 15px; font-size: 14px; font-weight: bold; color: red; text-align: center; }
     </style>
 </head>
 <body>
     <h2>Пульт Xiaomi Mi TV</h2>
     <div class="input-group">
-        <label for="tv-ip" style="font-size: 12px; display: block; margin-bottom: 5px;">Tailscale IP телевизора:</label>
-        <input type="text" id="tv-ip" value="100.89.27.126" placeholder="100.89.27.126">
+        <label style="font-size: 12px; margin-bottom: 5px; display:block;">Tailscale IP телевизора:</label>
+        <input type="text" id="tv-ip" value="100.89.27.126">
     </div>
     <div class="remote-container">
         <div class="row">
             <button class="power" onclick="sendKey('KEYCODE_POWER')">⏻</button>
             <button onclick="sendKey('KEYCODE_HOME')">🏠</button>
-            <button onclick="sendKey('KEYCODE_BACK')">↩</button>
         </div>
         <button onclick="sendKey('KEYCODE_DPAD_UP')">▲</button>
         <div class="row">
@@ -80,40 +50,39 @@ def read_root():
             <button onclick="sendKey('KEYCODE_DPAD_RIGHT')">▶</button>
         </div>
         <button onclick="sendKey('KEYCODE_DPAD_DOWN')">▼</button>
-        <div class="row" style="margin-top: 10px;">
-            <button onclick="sendKey('KEYCODE_VOLUME_DOWN')">🔉</button>
-            <button onclick="sendKey('KEYCODE_VOLUME_UP')">🔊</button>
-        </div>
     </div>
     <div id="status" class="status">Готов к работе</div>
 
     <script>
         const tg = window.Telegram.WebApp;
-        tg.ready();
-        tg.expand();
-
-        const BACKEND_URL = "/send_command";
+        tg.ready(); tg.expand();
 
         async function sendKey(keyCode) {
             const ip = document.getElementById('tv-ip').value.trim();
             const statusEl = document.getElementById('status');
-            if (!ip) { statusEl.innerText = "Введите IP-адрес!"; return; }
+            statusEl.style.color = "gray";
             statusEl.innerText = "Отправка...";
 
             try {
-                const response = await fetch(BACKEND_URL, {
+                const response = await fetch("/send_command", {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ ip: ip, key: keyCode })
                 });
+                
+                const data = await response.json();
+                
                 if (response.ok) {
+                    statusEl.style.color = "green";
                     statusEl.innerText = "Команда отправлена!";
                     if (tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
                 } else {
-                    statusEl.innerText = "Ошибка сервера";
+                    statusEl.style.color = "red";
+                    statusEl.innerText = "Ошибка: " + (data.detail || "Неизвестная ошибка");
                 }
             } catch (error) {
-                statusEl.innerText = "Ошибка сети";
+                statusEl.style.color = "red";
+                statusEl.innerText = "Ошибка сети Telegram";
             }
         }
     </script>
@@ -127,9 +96,13 @@ def send_command(data: CommandRequest):
     command = f"input keyevent {data.key}\n"
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.settimeout(3.0)
+            s.settimeout(4.0)
             s.connect((data.ip, port))
             s.sendall(command.encode('utf-8'))
         return {"status": "success"}
+    except socket.timeout:
+        raise HTTPException(status_code=504, detail="Тайм-аут: Сервер не может достучаться до IP телевизора. Render не подключен к Tailscale.")
+    except ConnectionRefusedError:
+        raise HTTPException(status_code=502, detail="Соединение отклонено: Порт 5555 закрыт. Включите отладку по сети на ТВ.")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
