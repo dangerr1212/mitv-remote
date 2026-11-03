@@ -2,6 +2,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 import socket
+import socks
 
 app = FastAPI()
 
@@ -94,15 +95,22 @@ def read_root():
 def send_command(data: CommandRequest):
     port = 5555
     command = f"input keyevent {data.key}\n"
+    
+    # Точечно создаем SOCKS5 сокет только для этой команды
+    s = socks.socksocket()
+    s.set_proxy(socks.SOCKS5, "127.0.0.1", 1055)
+    s.settimeout(4.0)
+    
     try:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.settimeout(4.0)
-            s.connect((data.ip, port))
-            s.sendall(command.encode('utf-8'))
+        s.connect((data.ip, port))
+        s.sendall(command.encode('utf-8'))
+        s.close()
         return {"status": "success"}
     except socket.timeout:
-        raise HTTPException(status_code=504, detail="Тайм-аут: Сервер не может достучаться до IP телевизора. Render не подключен к Tailscale.")
+        raise HTTPException(status_code=504, detail="Тайм-аут: Телевизор выключен или не подключен к интернету.")
     except ConnectionRefusedError:
-        raise HTTPException(status_code=502, detail="Соединение отклонено: Порт 5555 закрыт. Включите отладку по сети на ТВ.")
+        raise HTTPException(status_code=502, detail="Соединение отклонено: Порт 5555 закрыт на ТВ.")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"Ошибка сокета: {str(e)}")
+    finally:
+        s.close()
