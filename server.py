@@ -30,25 +30,23 @@ tv_device = None
 
 def connect_tv(ip):
     global tv_device
-    orig_socket = socket.socket
     orig_create_conn = socket.create_connection
-    try:
-        socks.set_default_proxy(socks.SOCKS5, "127.0.0.1", 1055)
-        socket.socket = socks.socksocket
+    
+    def patched_create_connection(address, timeout=socket._GLOBAL_DEFAULT_TIMEOUT, source_address=None):
+        s = socks.socksocket()
+        # Проксируем только это конкретное подключение
+        s.set_proxy(socks.SOCKS5, "127.0.0.1", 1055)
+        if timeout is not socket._GLOBAL_DEFAULT_TIMEOUT:
+            s.settimeout(timeout)
+        s.connect(address)
+        return s
         
-        def patched_create_connection(address, timeout=socket._GLOBAL_DEFAULT_TIMEOUT, source_address=None):
-            s = socks.socksocket()
-            if timeout is not socket._GLOBAL_DEFAULT_TIMEOUT:
-                s.settimeout(timeout)
-            s.connect(address)
-            return s
+    try:
         socket.create_connection = patched_create_connection
-
         new_device = AdbDeviceTcp(ip, 5555, default_transport_timeout_s=2.0)
         new_device.connect(rsa_keys=[signer], auth_timeout_s=2.0)
         tv_device = new_device
     finally:
-        socket.socket = orig_socket
         socket.create_connection = orig_create_conn
 
 @app.get("/", response_class=HTMLResponse)
@@ -191,10 +189,10 @@ def send_text(data: TextRequest):
     try:
         if tv_device is None or not tv_device.available:
             connect_tv(data.ip)
-        # ADB требует заменять пробелы на %s при вводе текста
         safe_text = data.text.replace(" ", "%s")
         tv_device.shell(f"input text {safe_text}")
         return {"status": "success"}
     except Exception as e:
         tv_device = None
         raise HTTPException(status_code=500, detail=f"Ошибка связи: {str(e)}")
+        
